@@ -46,6 +46,7 @@ typedef uint8_t ouichefs_iref_t;
 static char zero_block[OUICHEFS_BLOCK_SIZE];
 
 struct ouichefs_inode {
+	uint32_t i_no; /* Unique identifier */
 	mode_t i_mode; /* File mode */
 	uint32_t i_uid; /* Owner id */
 	uint32_t i_gid; /* Group id */
@@ -58,9 +59,15 @@ struct ouichefs_inode {
 	uint64_t i_nmtime; /* Modification time (nsec) */
 	uint32_t i_blocks; /* Block count (subdir count for directories) */
 	uint32_t i_nlink; /* Hard links count */
+	uint32_t i_refcnt; /* Reference count for snapshot count tracking */
 	uint32_t index_block; /* Block with list of blocks for this file */
 };
 
+struct ouichefs_snapshot {
+	uint32_t s_id; /* Unique id of the snapshot */
+	uint32_t s_root; /* Index of the root inode */
+	uint64_t s_time; /* Creation time */
+};
 
 struct ouichefs_superblock {
 	uint32_t magic; /* Magic number */
@@ -70,12 +77,18 @@ struct ouichefs_superblock {
 
 	uint32_t nr_istore_blocks; /* Number of inode store blocks */
 	uint32_t nr_ifree_blocks; /* Number of free inodes bitmask blocks */
+	uint32_t nr_iref_blocks; /* Number of ino refcount blocks */
 	uint32_t nr_bfree_blocks; /* Number of free blocks bitmask blocks */
 
 	uint32_t nr_free_inodes; /* Number of free inodes */
 	uint32_t nr_free_blocks; /* Number of free blocks */
 
-	char padding[4064]; /* Padding to match block size */
+	uint32_t nr_snapshots; /* Number of snapshots */
+
+	char padding[2008]; /* Padding to match block size */
+
+	struct ouichefs_snapshot
+		snapshots[OUICHEFS_MAX_SNAPSHOTS]; /* List of snapshots */
 };
 
 struct ouichefs_file_block {
@@ -113,6 +126,7 @@ static struct ouichefs_superblock *write_superblock(int fd, struct stat *fstats)
 	uint32_t nr_inodes;
 	uint32_t nr_blocks;
 	uint32_t nr_ifree_blocks;
+	uint32_t nr_iref_blocks;
 	uint32_t nr_bfree_blocks;
 	uint32_t nr_istore_blocks;
 	uint32_t mod;
@@ -136,6 +150,7 @@ static struct ouichefs_superblock *write_superblock(int fd, struct stat *fstats)
 	sb->nr_inodes = htole32(nr_inodes);
 	sb->nr_istore_blocks = htole32(nr_istore_blocks);
 	sb->nr_ifree_blocks = htole32(nr_ifree_blocks);
+	sb->nr_iref_blocks = htole32(nr_iref_blocks);
 	sb->nr_bfree_blocks = htole32(nr_bfree_blocks);
 	sb->nr_free_inodes = htole32(nr_inodes - 1);
 	sb->nr_free_blocks =
@@ -150,14 +165,14 @@ static struct ouichefs_superblock *write_superblock(int fd, struct stat *fstats)
 	printf("Superblock: (%ld)\n"
 	       "\tmagic=%#x\n"
 	       "\tnr_blocks=%u\n"
-	       "\tnr_inodes=%u (istore=%u blocks)\n"
-	       "\tnr_ifree_blocks=%u\n"
-	       "\tnr_bfree_blocks=%u\n"
+	       "\tnr_inodes=%u (blocks: istore=%u, ifree=%u, iref=%u, bfree=%u)\n"
 	       "\tnr_free_inodes=%u\n"
 	       "\tnr_free_blocks=%u\n",
-	       sizeof(struct ouichefs_superblock), sb->magic, sb->nr_blocks,
-	       sb->nr_inodes, sb->nr_istore_blocks, sb->nr_ifree_blocks,
-	       sb->nr_bfree_blocks, sb->nr_free_inodes, sb->nr_free_blocks);
+	       sizeof(struct ouichefs_superblock), le32toh(sb->magic),
+	       le32toh(sb->nr_blocks), le32toh(sb->nr_inodes),
+	       le32toh(sb->nr_istore_blocks), le32toh(sb->nr_ifree_blocks),
+	       le32toh(sb->nr_iref_blocks), le32toh(sb->nr_bfree_blocks),
+	       le32toh(sb->nr_free_inodes), le32toh(sb->nr_free_blocks));
 
 	return sb;
 }
@@ -179,6 +194,7 @@ static int write_inode_store(int fd, struct ouichefs_superblock *sb)
 	inode->i_mode =
 		htole32(S_IFDIR | S_IRUSR | S_IRGRP | S_IROTH | S_IWUSR |
 			S_IWGRP | S_IXUSR | S_IXGRP | S_IXOTH);
+	inode->i_no = 1;
 	inode->i_uid = 0;
 	inode->i_gid = 0;
 	inode->i_size = htole32(OUICHEFS_BLOCK_SIZE);
@@ -186,6 +202,7 @@ static int write_inode_store(int fd, struct ouichefs_superblock *sb)
 	inode->i_nctime = inode->i_natime = inode->i_nmtime = htole64(0);
 	inode->i_blocks = htole32(1);
 	inode->i_nlink = htole32(2);
+	inode->i_refcnt = 1;
 	inode->index_block = htole32(OUICHEFS_SB_DATA_BLOCK_OFFSET(sb));
 
 	ret = write(fd, block, OUICHEFS_BLOCK_SIZE);
@@ -248,6 +265,46 @@ static int write_ifree_blocks(int fd, struct ouichefs_superblock *sb)
 	ret = 0;
 
 	printf("Ifree blocks: wrote %d blocks\n", i);
+
+end:
+	free(block);
+
+	return ret;
+}
+
+static int write_iref_blocks(int fd, struct ouichefs_superblock *sb)
+{
+	int ret = 0;
+	uint32_t i;
+	uint8_t *block;
+	ouichefs_iref_t *iref;
+
+	block = calloc(1, OUICHEFS_BLOCK_SIZE);
+	if (!block)
+		return -1;
+
+	iref = block;
+
+	/* Reference count for ino 1 */
+	iref[0] = 0xFF;
+	iref[1] = 1;
+
+	ret = write(fd, block, OUICHEFS_BLOCK_SIZE);
+	if (ret != OUICHEFS_BLOCK_SIZE) {
+		ret = -1;
+		goto end;
+	}
+
+	for (i = 1; i < le32toh(sb->nr_iref_blocks); i++) {
+		ret = write(fd, zero_block, OUICHEFS_BLOCK_SIZE);
+		if (ret != OUICHEFS_BLOCK_SIZE) {
+			ret = -1;
+			goto end;
+		}
+	}
+	ret = 0;
+
+	printf("Iref blocks: wrote %d blocks\n", i);
 
 end:
 	free(block);
@@ -401,6 +458,14 @@ int main(int argc, char **argv)
 	ret = write_ifree_blocks(fd, sb);
 	if (ret != 0) {
 		perror("write_ifree_blocks()");
+		ret = EXIT_FAILURE;
+		goto free_sb;
+	}
+
+	/* Write ino refcount blocks */
+	ret = write_iref_blocks(fd, sb);
+	if (ret != 0) {
+		perror("write_iref_blocks()");
 		ret = EXIT_FAILURE;
 		goto free_sb;
 	}
