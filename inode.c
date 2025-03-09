@@ -4,6 +4,7 @@
  *
  * Copyright (C) 2018 Redha Gouicem <redha.gouicem@lip6.fr>
  */
+
 #define pr_fmt(fmt) "%s:%s: " fmt, KBUILD_MODNAME, __func__
 
 #include <linux/module.h>
@@ -104,8 +105,8 @@ static struct dentry *ouichefs_lookup(struct inode *dir, struct dentry *dentry,
 	struct ouichefs_inode_info *ci_dir = OUICHEFS_INODE(dir);
 	struct inode *inode = NULL;
 	struct buffer_head *bh = NULL;
-	struct ouichefs_dir_block *dblock = NULL;
-	struct ouichefs_file *f = NULL;
+	const struct ouichefs_dir_block *dblock = NULL;
+	const struct ouichefs_file *f = NULL;
 	int i;
 
 	/* Check filename length */
@@ -119,7 +120,7 @@ static struct dentry *ouichefs_lookup(struct inode *dir, struct dentry *dentry,
 	dblock = (struct ouichefs_dir_block *)bh->b_data;
 
 	/* Search for the file in directory */
-	for (i = 0; i < OUICHEFS_MAX_SUBFILES; i++) {
+	for (i = 0; i < OUICHEFS_MAX_DIR_FILES; i++) {
 		f = &dblock->files[i];
 		if (!f->inode)
 			break;
@@ -240,7 +241,7 @@ static int ouichefs_create(struct mnt_idmap *idmap, struct inode *dir,
 	dblock = (struct ouichefs_dir_block *)bh->b_data;
 
 	/* Check if parent directory is full */
-	if (dblock->files[OUICHEFS_MAX_SUBFILES - 1].inode != 0) {
+	if (dblock->files[OUICHEFS_MAX_DIR_FILES - 1].inode != 0) {
 		ret = -EMLINK;
 		goto end;
 	}
@@ -267,7 +268,7 @@ static int ouichefs_create(struct mnt_idmap *idmap, struct inode *dir,
 	brelse(bh2);
 
 	/* Find first free slot in parent index and register new inode */
-	for (i = 0; i < OUICHEFS_MAX_SUBFILES; i++)
+	for (i = 0; i < OUICHEFS_MAX_DIR_FILES; i++)
 		if (dblock->files[i].inode == 0)
 			break;
 	dblock->files[i].inode = inode->i_ino;
@@ -310,7 +311,7 @@ static int ouichefs_unlink(struct inode *dir, struct dentry *dentry)
 	struct inode *inode = d_inode(dentry);
 	struct buffer_head *bh = NULL, *bh2 = NULL;
 	struct ouichefs_dir_block *dir_block = NULL;
-	struct ouichefs_file_index_block *file_block = NULL;
+	struct ouichefs_file_block *file_block = NULL;
 	uint32_t ino, bno;
 	int i, f_id = -1, nr_subs = 0;
 
@@ -324,7 +325,7 @@ static int ouichefs_unlink(struct inode *dir, struct dentry *dentry)
 	dir_block = (struct ouichefs_dir_block *)bh->b_data;
 
 	/* Search for inode in parent index and get number of subfiles */
-	for (i = 0; i < OUICHEFS_MAX_SUBFILES; i++) {
+	for (i = 0; i < OUICHEFS_MAX_DIR_FILES; i++) {
 		if (dir_block->files[i].inode == ino)
 			f_id = i;
 		else if (dir_block->files[i].inode == 0)
@@ -333,7 +334,7 @@ static int ouichefs_unlink(struct inode *dir, struct dentry *dentry)
 	nr_subs = i;
 
 	/* Remove file from parent directory */
-	if (f_id != OUICHEFS_MAX_SUBFILES - 1)
+	if (f_id != OUICHEFS_MAX_DIR_FILES - 1)
 		memmove(dir_block->files + f_id, dir_block->files + f_id + 1,
 			(nr_subs - f_id - 1) * sizeof(struct ouichefs_file));
 	memset(&dir_block->files[nr_subs - 1], 0, sizeof(struct ouichefs_file));
@@ -355,7 +356,7 @@ static int ouichefs_unlink(struct inode *dir, struct dentry *dentry)
 	bh = sb_bread(sb, bno);
 	if (!bh)
 		goto clean_inode;
-	file_block = (struct ouichefs_file_index_block *)bh->b_data;
+	file_block = (struct ouichefs_file_block *)bh->b_data;
 	if (S_ISDIR(inode->i_mode))
 		goto scrub;
 	for (i = 0; i < inode->i_blocks - 1; i++) {
@@ -427,7 +428,7 @@ static int ouichefs_rename(struct mnt_idmap *idmap, struct inode *old_dir,
 	if (!bh_new)
 		return -EIO;
 	dir_block = (struct ouichefs_dir_block *)bh_new->b_data;
-	for (i = 0; i < OUICHEFS_MAX_SUBFILES; i++) {
+	for (i = 0; i < OUICHEFS_MAX_DIR_FILES; i++) {
 		/* if old_dir == new_dir, save the renamed file position */
 		if (new_dir == old_dir) {
 			if (strncmp(dir_block->files[i].filename,
@@ -479,7 +480,7 @@ static int ouichefs_rename(struct mnt_idmap *idmap, struct inode *old_dir,
 		return -EIO;
 	dir_block = (struct ouichefs_dir_block *)bh_old->b_data;
 	/* Search for inode in old directory and number of subfiles */
-	for (i = 0; OUICHEFS_MAX_SUBFILES; i++) {
+	for (i = 0; OUICHEFS_MAX_DIR_FILES; i++) {
 		if (dir_block->files[i].inode == src->i_ino)
 			f_id = i;
 		else if (dir_block->files[i].inode == 0)
@@ -488,7 +489,7 @@ static int ouichefs_rename(struct mnt_idmap *idmap, struct inode *old_dir,
 	nr_subs = i;
 
 	/* Remove file from old parent directory */
-	if (f_id != OUICHEFS_MAX_SUBFILES - 1)
+	if (f_id != OUICHEFS_MAX_DIR_FILES - 1)
 		memmove(dir_block->files + f_id, dir_block->files + f_id + 1,
 			(nr_subs - f_id - 1) * sizeof(struct ouichefs_file));
 	memset(&dir_block->files[nr_subs - 1], 0, sizeof(struct ouichefs_file));

@@ -4,6 +4,7 @@
  *
  * Copyright (C) 2018 Redha Gouicem <redha.gouicem@lip6.fr>
  */
+
 #define pr_fmt(fmt) "%s:%s: " fmt, KBUILD_MODNAME, __func__
 
 #include <linux/module.h>
@@ -36,7 +37,7 @@ static int ouichefs_iterate(struct file *dir, struct dir_context *ctx)
 	 * Check that ctx->pos is not bigger than what we can handle (including
 	 * . and ..)
 	 */
-	if (ctx->pos > OUICHEFS_MAX_SUBFILES + 2)
+	if (ctx->pos > OUICHEFS_MAX_DIR_FILES + 2)
 		return 0;
 
 	/* Commit . and .. to ctx */
@@ -50,7 +51,7 @@ static int ouichefs_iterate(struct file *dir, struct dir_context *ctx)
 	dblock = (struct ouichefs_dir_block *)bh->b_data;
 
 	/* Iterate over the index block and commit subfiles */
-	for (i = ctx->pos - 2; i < OUICHEFS_MAX_SUBFILES; i++) {
+	for (i = ctx->pos - 2; i < OUICHEFS_MAX_DIR_FILES; i++) {
 		f = &dblock->files[i];
 		if (!f->inode)
 			break;

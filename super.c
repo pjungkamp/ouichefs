@@ -4,6 +4,7 @@
  *
  * Copyright (C) 2018 Redha Gouicem <redha.gouicem@lip6.fr>
  */
+
 #define pr_fmt(fmt) "%s:%s: " fmt, KBUILD_MODNAME, __func__
 
 #include <linux/module.h>
@@ -40,6 +41,7 @@ static struct inode *ouichefs_alloc_inode(struct super_block *sb)
 	ci = kmem_cache_alloc(ouichefs_inode_cache, GFP_KERNEL);
 	if (!ci)
 		return NULL;
+
 	inode_init_once(&ci->vfs_inode);
 	return &ci->vfs_inode;
 }
@@ -102,7 +104,7 @@ static int sync_sb_info(struct super_block *sb, int wait)
 	struct buffer_head *bh;
 
 	/* Flush superblock */
-	bh = sb_bread(sb, 0);
+	bh = sb_bread(sb, OUICHEFS_SB_BLOCK_NR);
 	if (!bh)
 		return -EIO;
 	disk_sb = (struct ouichefs_sb_info *)bh->b_data;
@@ -131,7 +133,7 @@ static int sync_ifree(struct super_block *sb, int wait)
 
 	/* Flush free inodes bitmask */
 	for (i = 0; i < sbi->nr_ifree_blocks; i++) {
-		idx = sbi->nr_istore_blocks + i + 1;
+		idx = OUICHEFS_SBI_IFREE_BLOCK_OFFSET(sbi) + i;
 
 		bh = sb_bread(sb, idx);
 		if (!bh)
@@ -158,7 +160,7 @@ static int sync_bfree(struct super_block *sb, int wait)
 
 	/* Flush free blocks bitmask */
 	for (i = 0; i < sbi->nr_bfree_blocks; i++) {
-		idx = sbi->nr_istore_blocks + sbi->nr_ifree_blocks + i + 1;
+		idx = OUICHEFS_SBI_BFREE_BLOCK_OFFSET(sbi) + i;
 
 		bh = sb_bread(sb, idx);
 		if (!bh)
@@ -285,7 +287,7 @@ int ouichefs_fill_super(struct super_block *sb, void *data, int silent)
 		goto free_sbi;
 	}
 	for (i = 0; i < sbi->nr_ifree_blocks; i++) {
-		int idx = sbi->nr_istore_blocks + i + 1;
+		int idx = OUICHEFS_SBI_IFREE_BLOCK_OFFSET(sbi) + i;
 
 		bh = sb_bread(sb, idx);
 		if (!bh) {
@@ -307,7 +309,7 @@ int ouichefs_fill_super(struct super_block *sb, void *data, int silent)
 		goto free_ifree;
 	}
 	for (i = 0; i < sbi->nr_bfree_blocks; i++) {
-		int idx = sbi->nr_istore_blocks + sbi->nr_ifree_blocks + i + 1;
+		int idx = OUICHEFS_SBI_BFREE_BLOCK_OFFSET(sbi) + i;
 
 		bh = sb_bread(sb, idx);
 		if (!bh) {

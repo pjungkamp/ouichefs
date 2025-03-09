@@ -27,19 +27,19 @@ static int ouichefs_file_get_block(struct inode *inode, sector_t iblock,
 	struct super_block *sb = inode->i_sb;
 	struct ouichefs_sb_info *sbi = OUICHEFS_SB(sb);
 	struct ouichefs_inode_info *ci = OUICHEFS_INODE(inode);
-	struct ouichefs_file_index_block *index;
+	struct ouichefs_file_block *index;
 	struct buffer_head *bh_index;
 	int ret = 0, bno;
 
 	/* If block number exceeds filesize, fail */
-	if (iblock >= OUICHEFS_BLOCK_SIZE >> 2)
+	if (iblock >= OUICHEFS_MAX_FILE_BLOCKS)
 		return -EFBIG;
 
 	/* Read index block from disk */
 	bh_index = sb_bread(sb, ci->index_block);
 	if (!bh_index)
 		return -EIO;
-	index = (struct ouichefs_file_index_block *)bh_index->b_data;
+	index = (struct ouichefs_file_block *)bh_index->b_data;
 
 	/*
 	 * Check if iblock is already allocated. If not and create is true,
@@ -116,10 +116,8 @@ static int ouichefs_write_begin(struct file *file,
 	err = block_write_begin(mapping, pos, len, pagep,
 				ouichefs_file_get_block);
 	/* if this failed, reclaim newly allocated blocks */
-	if (err < 0) {
-		pr_err("%s:%d: newly allocated blocks reclaim not implemented yet\n",
-		       __func__, __LINE__);
-	}
+	if (err < 0)
+		pr_err("newly allocated blocks reclaim not implemented yet\n");
 	return err;
 }
 
@@ -140,8 +138,7 @@ static int ouichefs_write_end(struct file *file, struct address_space *mapping,
 	/* Complete the write() */
 	ret = generic_write_end(file, mapping, pos, len, copied, page, fsdata);
 	if (ret < len) {
-		pr_err("%s:%d: wrote less than asked... what do I do? nothing for now...\n",
-		       __func__, __LINE__);
+		pr_err("wrote less than asked... what do I do? nothing for now...\n");
 	} else {
 		uint32_t nr_blocks_old = inode->i_blocks;
 
@@ -156,7 +153,7 @@ static int ouichefs_write_end(struct file *file, struct address_space *mapping,
 		if (nr_blocks_old > inode->i_blocks) {
 			int i;
 			struct buffer_head *bh_index;
-			struct ouichefs_file_index_block *index;
+			struct ouichefs_file_block *index;
 
 			/* Free unused blocks from page cache */
 			truncate_pagecache(inode, inode->i_size);
@@ -169,7 +166,7 @@ static int ouichefs_write_end(struct file *file, struct address_space *mapping,
 				       nr_blocks_old - inode->i_blocks);
 				goto end;
 			}
-			index = (struct ouichefs_file_index_block *)
+			index = (struct ouichefs_file_block *)
 					bh_index->b_data;
 
 			for (i = inode->i_blocks - 1; i < nr_blocks_old - 1;
@@ -192,7 +189,8 @@ const struct address_space_operations ouichefs_aops = {
 	.write_end = ouichefs_write_end
 };
 
-static int ouichefs_open(struct inode *inode, struct file *file) {
+static int ouichefs_open(struct inode *inode, struct file *file)
+{
 	bool wronly = (file->f_flags & O_WRONLY) != 0;
 	bool rdwr = (file->f_flags & O_RDWR) != 0;
 	bool trunc = (file->f_flags & O_TRUNC) != 0;
@@ -201,7 +199,7 @@ static int ouichefs_open(struct inode *inode, struct file *file) {
 		struct super_block *sb = inode->i_sb;
 		struct ouichefs_sb_info *sbi = OUICHEFS_SB(sb);
 		struct ouichefs_inode_info *ci = OUICHEFS_INODE(inode);
-		struct ouichefs_file_index_block *index;
+		struct ouichefs_file_block *index;
 		struct buffer_head *bh_index;
 		sector_t iblock;
 
@@ -209,7 +207,7 @@ static int ouichefs_open(struct inode *inode, struct file *file) {
 		bh_index = sb_bread(sb, ci->index_block);
 		if (!bh_index)
 			return -EIO;
-		index = (struct ouichefs_file_index_block *)bh_index->b_data;
+		index = (struct ouichefs_file_block *)bh_index->b_data;
 
 		for (iblock = 0; index->blocks[iblock] != 0; iblock++) {
 			put_block(sbi, index->blocks[iblock]);
@@ -220,7 +218,7 @@ static int ouichefs_open(struct inode *inode, struct file *file) {
 
 		brelse(bh_index);
 	}
-	
+
 	return 0;
 }
 

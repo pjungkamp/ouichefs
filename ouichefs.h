@@ -11,12 +11,44 @@
 
 #define OUICHEFS_MAGIC 0x48434957
 
-#define OUICHEFS_SB_BLOCK_NR 0
-
 #define OUICHEFS_BLOCK_SIZE (1 << 12) /* 4 KiB */
 #define OUICHEFS_MAX_FILESIZE (1 << 22) /* 4 MiB */
 #define OUICHEFS_FILENAME_LEN 28
-#define OUICHEFS_MAX_SUBFILES 128
+#define OUICHEFS_MAX_DIR_FILES \
+	(OUICHEFS_BLOCK_SIZE / sizeof(struct ouichefs_file))
+#define OUICHEFS_MAX_FILE_BLOCKS (OUICHEFS_BLOCK_SIZE / sizeof(uint32_t))
+
+/* block offset helper */
+
+#define OUICHEFS_SB_BLOCK_NR 0
+
+#define OUICHEFS_SBI_ISTORE_BLOCK_OFFSET(sbi) \
+	((void)sbi, OUICHEFS_SB_BLOCK_NR + 1)
+
+#define OUICHEFS_SBI_IFREE_BLOCK_OFFSET(sbi) \
+	(OUICHEFS_SBI_ISTORE_BLOCK_OFFSET(sbi) + sbi->nr_istore_blocks)
+
+#define OUICHEFS_SBI_BFREE_BLOCK_OFFSET(sbi) \
+	(OUICHEFS_SBI_IFREE_BLOCK_OFFSET(sbi) + sbi->nr_ifree_blocks)
+
+#define OUICHEFS_SBI_DATA_BLOCK_OFFSET(sbi) \
+	(OUICHEFS_SBI_BFREE_BLOCK_OFFSET(sbi) + sbi->nr_bfree_blocks)
+
+#define OUICHEFS_INODES_PER_BLOCK \
+	(OUICHEFS_BLOCK_SIZE / sizeof(struct ouichefs_inode))
+
+#define OUICHEFS_BITS_PER_BLOCK (OUICHEFS_BLOCK_SIZE * 8)
+
+#define OUICHEFS_IREF_PER_BLOCK (OUICHEFS_BLOCK_SIZE / sizeof(ouichefs_iref_t))
+
+/* private date getters */
+
+#define OUICHEFS_SB(sb) (sb->s_fs_info)
+
+#define OUICHEFS_INODE(inode) \
+	(container_of(inode, struct ouichefs_inode_info, vfs_inode))
+
+typedef uint8_t ouichefs_iref_t;
 
 /*
  * ouiche_fs partition layout
@@ -57,9 +89,6 @@ struct ouichefs_inode_info {
 	struct inode vfs_inode;
 };
 
-#define OUICHEFS_INODES_PER_BLOCK \
-	(OUICHEFS_BLOCK_SIZE / sizeof(struct ouichefs_inode))
-
 struct ouichefs_sb_info {
 	uint32_t magic; /* Magic number */
 
@@ -77,15 +106,15 @@ struct ouichefs_sb_info {
 	unsigned long *bfree_bitmap; /* In-memory free blocks bitmap */
 };
 
-struct ouichefs_file_index_block {
-	uint32_t blocks[OUICHEFS_BLOCK_SIZE >> 2];
+struct ouichefs_file_block {
+	uint32_t blocks[OUICHEFS_MAX_FILE_BLOCKS];
 };
 
 struct ouichefs_dir_block {
 	struct ouichefs_file {
 		uint32_t inode;
 		char filename[OUICHEFS_FILENAME_LEN];
-	} files[OUICHEFS_MAX_SUBFILES];
+	} files[OUICHEFS_MAX_DIR_FILES];
 };
 
 /* superblock functions */
