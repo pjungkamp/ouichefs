@@ -131,9 +131,8 @@ static struct dentry *ouichefs_lookup(struct inode *dir, struct dentry *dentry,
 	}
 	brelse(bh);
 
-	/* Update directory access time */
-	dir->i_atime = current_time(dir);
-	mark_inode_dirty(dir);
+	if (IS_ERR(inode))
+		return ERR_CAST(inode);
 
 	/* Fill the dentry with the inode */
 	d_add(dentry, inode);
