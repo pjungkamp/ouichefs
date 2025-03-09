@@ -328,7 +328,7 @@ int ouichefs_fill_super(struct super_block *sb, void *data, int silent)
 	if (!sbi->snapshots) {
 		ret = -ENOMEM;
 		goto free_sbi;
-}
+	}
 	memcpy(sbi->snapshots, bh->b_data + OUICHEFS_SNAPSHOTS_OFFSET,
 	       sbi->nr_snapshots * sizeof(struct ouichefs_snapshot));
 

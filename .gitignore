@@ -52,5 +52,12 @@ Module.symvers
 Mkfile.old
 dkms.conf
 
+# Tooling (clangd/nix)
+result*
+compile_commands.json
+.direnv
+.cache
+.pre-commit-config.yaml
+
 # Other
 mkfs/test.img
