@@ -190,9 +190,10 @@ extern const struct file_operations ouichefs_file_ops;
 extern const struct file_operations ouichefs_dir_ops;
 extern const struct address_space_operations ouichefs_aops;
 
-/* Getters for superbock and inode */
-#define OUICHEFS_SB(sb) (sb->s_fs_info)
-#define OUICHEFS_INODE(inode) \
-	(container_of(inode, struct ouichefs_inode_info, vfs_inode))
+/* sysfs interface functions */
+int sysfs_register_dev(struct super_block *sb);
+void sysfs_unregister_dev(const struct super_block *sb);
+int sysfs_init(void);
+void sysfs_deinit(void);
 
 #endif /* _OUICHEFS_H */

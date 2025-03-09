@@ -23,11 +23,17 @@ struct dentry *ouichefs_mount(struct file_system_type *fs_type, int flags,
 
 	dentry =
 		mount_bdev(fs_type, flags, dev_name, data, ouichefs_fill_super);
-	if (IS_ERR(dentry))
+	if (IS_ERR(dentry)) {
 		pr_err("'%s' mount failure\n", dev_name);
-	else
-		pr_info("'%s' mount success\n", dev_name);
+		goto mount_err;
+	}
+	pr_info("'%s' mount success\n", dev_name);
 
+	if (sysfs_register_dev(dentry->d_sb))
+		pr_warn("'%s' failed to create sysfs entry! Snapshot managment unavailable\n",
+			dev_name);
+
+mount_err:
 	return dentry;
 }
 
@@ -36,6 +42,8 @@ struct dentry *ouichefs_mount(struct file_system_type *fs_type, int flags,
  */
 void ouichefs_kill_sb(struct super_block *sb)
 {
+	sysfs_unregister_dev(sb);
+
 	kill_block_super(sb);
 
 	pr_info("unmounted disk\n");
@@ -66,9 +74,17 @@ static int __init ouichefs_init(void)
 		goto err_inode;
 	}
 
+	ret = sysfs_init();
+	if (ret) {
+		pr_err("sysfs_init() failed\n");
+		goto err_sysfs;
+	}
+
 	pr_info("module loaded\n");
 	return 0;
 
+err_sysfs:
+	unregister_filesystem(&ouichefs_file_system_type);
 err_inode:
 	ouichefs_destroy_inode_cache();
 err:
@@ -84,6 +100,8 @@ static void __exit ouichefs_exit(void)
 		pr_err("unregister_filesystem() failed\n");
 
 	ouichefs_destroy_inode_cache();
+
+	sysfs_deinit();
 
 	pr_info("module unloaded\n");
 }
