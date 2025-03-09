@@ -124,6 +124,10 @@ static int sync_sb_info(struct super_block *sb, int wait)
 	disk_sb->nr_bfree_blocks = sbi->nr_bfree_blocks;
 	disk_sb->nr_free_inodes = sbi->nr_free_inodes;
 	disk_sb->nr_free_blocks = sbi->nr_free_blocks;
+	disk_sb->nr_snapshots = sbi->nr_snapshots;
+
+	memcpy(bh->b_data + OUICHEFS_SNAPSHOTS_OFFSET, sbi->snapshots,
+	       sbi->nr_snapshots * sizeof(sbi->snapshots[0]));
 
 	mark_buffer_dirty(bh);
 	if (wait)
@@ -220,6 +224,7 @@ static void ouichefs_put_super(struct super_block *sb)
 		kfree(sbi->ifree_bitmap);
 		kfree(sbi->iref);
 		kfree(sbi->bfree_bitmap);
+		kfree(sbi->snapshots);
 		kfree(sbi);
 	}
 }
@@ -315,7 +320,17 @@ int ouichefs_fill_super(struct super_block *sb, void *data, int silent)
 	sbi->nr_bfree_blocks = csb->nr_bfree_blocks;
 	sbi->nr_free_inodes = csb->nr_free_inodes;
 	sbi->nr_free_blocks = csb->nr_free_blocks;
-	sb->s_fs_info = sbi;
+	sbi->nr_snapshots = csb->nr_snapshots;
+
+	/* Alloc and copy snapshots array */
+	sbi->snapshots = kcalloc(OUICHEFS_MAX_SNAPSHOTS,
+				 sizeof(struct ouichefs_snapshot), GFP_KERNEL);
+	if (!sbi->snapshots) {
+		ret = -ENOMEM;
+		goto free_sbi;
+}
+	memcpy(sbi->snapshots, bh->b_data + OUICHEFS_SNAPSHOTS_OFFSET,
+	       sbi->nr_snapshots * sizeof(struct ouichefs_snapshot));
 
 	brelse(bh);
 
@@ -324,7 +339,8 @@ int ouichefs_fill_super(struct super_block *sb, void *data, int silent)
 		kzalloc(sbi->nr_ifree_blocks * OUICHEFS_BLOCK_SIZE, GFP_KERNEL);
 	if (!sbi->ifree_bitmap) {
 		ret = -ENOMEM;
-		goto free_sbi;
+		bh = NULL;
+		goto free_snapshots;
 	}
 	for (i = 0; i < sbi->nr_ifree_blocks; i++) {
 		int idx = OUICHEFS_SBI_IFREE_BLOCK_OFFSET(sbi) + i;
@@ -412,6 +428,8 @@ free_iref:
 	kfree(sbi->iref);
 free_ifree:
 	kfree(sbi->ifree_bitmap);
+free_snapshots:
+	kfree(sbi->snapshots);
 free_sbi:
 	kfree(sbi);
 release:

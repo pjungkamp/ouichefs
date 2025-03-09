@@ -17,6 +17,9 @@
 #define OUICHEFS_MAX_DIR_FILES \
 	(OUICHEFS_BLOCK_SIZE / sizeof(struct ouichefs_file))
 #define OUICHEFS_MAX_FILE_BLOCKS (OUICHEFS_BLOCK_SIZE / sizeof(uint32_t))
+#define OUICHEFS_MAX_SNAPSHOTS \
+	((OUICHEFS_BLOCK_SIZE / 2) / sizeof(struct ouichefs_snapshot))
+#define OUICHEFS_SNAPSHOTS_OFFSET (1 << 11) /* 2 KiB */
 
 /* block offset helper */
 
@@ -99,6 +102,12 @@ struct ouichefs_inode_info {
 	struct inode vfs_inode;
 };
 
+struct ouichefs_snapshot {
+	uint32_t s_id; /* Unique id of the snapshot */
+	uint32_t s_root; /* Index of the root inode */
+	uint64_t s_time; /* Creation time */
+};
+
 struct ouichefs_sb_info {
 	uint32_t magic; /* Magic number */
 
@@ -113,9 +122,12 @@ struct ouichefs_sb_info {
 	uint32_t nr_free_inodes; /* Number of free inodes */
 	uint32_t nr_free_blocks; /* Number of free blocks */
 
+	uint32_t nr_snapshots; /* Number of snapshots */
+
 	unsigned long *ifree_bitmap; /* In-memory free inodes bitmap */
 	ouichefs_iref_t *iref; /* In-memory ino reference counts */
 	unsigned long *bfree_bitmap; /* In-memory free blocks bitmap */
+	struct ouichefs_snapshot *snapshots; /* In-memory snapshot list */
 };
 
 struct ouichefs_file_block {
@@ -161,6 +173,17 @@ void ouichefs_truncate_file_blocks(struct super_block *sb, struct inode *inode,
 				   struct ouichefs_file_block *fb);
 int ouichefs_copy_file_blocks(struct super_block *sb, struct inode *inode,
 			      struct ouichefs_file_block *fb);
+
+/* walk functions */
+typedef int (*ouichefs_walk_cb)(struct super_block *sb, uint32_t istore,
+				struct ouichefs_inode *inode);
+int ouichefs_walk(struct super_block *sb, uint32_t root_index_block,
+		  ouichefs_walk_cb visit, ouichefs_walk_cb revert);
+
+/* snapshot functions */
+int ouichefs_snapshot_create(struct super_block *sb, uint32_t id);
+int ouichefs_snapshot_restore(struct super_block *sb, uint32_t id);
+int ouichefs_snapshot_destroy(struct super_block *sb, uint32_t id);
 
 /* file functions */
 extern const struct file_operations ouichefs_file_ops;
