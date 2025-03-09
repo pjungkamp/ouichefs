@@ -53,10 +53,10 @@ static int ouichefs_iterate(struct file *dir, struct dir_context *ctx)
 	/* Iterate over the index block and commit subfiles */
 	for (i = ctx->pos - 2; i < OUICHEFS_MAX_DIR_FILES; i++) {
 		f = &dblock->files[i];
-		if (!f->inode)
+		if (!f->istore)
 			break;
-		if (!dir_emit(ctx, f->filename, OUICHEFS_FILENAME_LEN, f->inode,
-			      DT_UNKNOWN))
+		if (!dir_emit(ctx, f->filename, OUICHEFS_FILENAME_LEN,
+			      f->istore, DT_UNKNOWN))
 			break;
 		ctx->pos++;
 	}
