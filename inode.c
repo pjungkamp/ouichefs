@@ -277,7 +277,6 @@ static int ouichefs_create(struct mnt_idmap *idmap, struct inode *dir,
 	brelse(bh);
 
 	/* Update stats and mark dir and new inode dirty */
-	mark_inode_dirty(inode);
 	dir->i_mtime = dir->i_atime = dir->i_ctime = current_time(dir);
 	if (S_ISDIR(mode))
 		inode_inc_link_count(dir);
