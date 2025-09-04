@@ -1,6 +1,16 @@
 {
   description = "LKP WS24 Project";
 
+  nixConfig = {
+    extra-substituters = [
+      "https://attic.jungkamp.dev/pjungkamp-lkp"
+    ];
+
+    extra-trusted-public-keys = [
+      "pjungkamp-lkp:x4tr7c1OR6bZokeDVotd7An5IZJccrAVLiHDd2rfFhE="
+    ];
+  };
+
   inputs = {
     flake-parts.url = "github:hercules-ci/flake-parts";
     flake-recipes.url = "github:pjungkamp/flake-recipes";
